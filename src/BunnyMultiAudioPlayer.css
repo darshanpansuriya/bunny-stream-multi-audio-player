@@ -1,0 +1,51 @@
+.bma {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bma-video {
+  width: 100%;
+  display: block;
+  background: #000;
+  border-radius: 8px;
+  aspect-ratio: 16 / 9;
+}
+
+.bma-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.bma-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+}
+
+.bma-field select {
+  font: inherit;
+  padding: 4px 6px;
+}
+
+.bma-note {
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin: 0;
+}
+
+.bma-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #fdecea;
+  color: #7f1d1d;
+  font-size: 0.9em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bma-error { background: #3f1d1d; color: #fecaca; }
+}
