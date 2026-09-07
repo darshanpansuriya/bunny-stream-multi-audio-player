@@ -7,24 +7,54 @@
  *
  * Config can also come from the URL:
  *   ?host=vz-xxxx.b-cdn.net&video=<guid>&lang=es
+ *   ...&alias=yue%3DAudio   — repair a track Bunny mis-tagged
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import BunnyMultiAudioPlayer from './BunnyMultiAudioPlayer.jsx';
-import { buildHlsUrl } from './audioLang.js';
+import { aliasTargetFor, buildHlsUrl, unreachableByLanguage } from './audioLang.js';
+import LANGUAGES from './languages.js';
 import './App.css';
 
 const q = new URLSearchParams(window.location.search);
 
+/** "yue=Audio, pt-BR=Portuguese 28" <-> { yue: 'Audio', 'pt-BR': 'Portuguese 28' } */
+function parseAliases(text) {
+  const out = {};
+  for (const pair of String(text || '').split(',')) {
+    const at = pair.indexOf('=');
+    if (at === -1) continue;
+    const code = pair.slice(0, at).trim();
+    const target = pair.slice(at + 1).trim();
+    if (code && target) out[code] = target;
+  }
+  return out;
+}
+
+function formatAliases(map) {
+  return Object.entries(map).map(([code, target]) => `${code}=${target}`).join(', ');
+}
+
+/**
+ * Which language lives on a mis-tagged track is not in the manifest — Bunny
+ * overwrote it — so it is stated once, by ear, and kept per video from then on.
+ */
+const aliasStoreKey = (guid) => `bma-aliases:${guid}`;
+
+function readStoredAliases(guid) {
+  try { return window.localStorage.getItem(aliasStoreKey(guid)) || ''; } catch { return ''; }
+}
+
+function writeStoredAliases(guid, text) {
+  try {
+    if (text) window.localStorage.setItem(aliasStoreKey(guid), text);
+    else window.localStorage.removeItem(aliasStoreKey(guid));
+  } catch { /* private mode — the box still works for this session */ }
+}
+
 const LANG_CHOICES = [
   { code: '', label: '(none — use fallback)' },
-  { code: 'en', label: 'English (en)' },
-  { code: 'es', label: 'Spanish (es)' },
-  { code: 'fr', label: 'French (fr)' },
-  { code: 'de', label: 'German (de)' },
-  { code: 'pt-BR', label: 'Portuguese, Brazil (pt-BR)' },
-  { code: 'hi', label: 'Hindi (hi)' },
-  { code: 'ja', label: 'Japanese (ja)' },
+  ...LANGUAGES.map(({ name, code }) => ({ code, label: `${name} (${code})` })),
   { code: 'zz', label: 'Unavailable language (zz) — tests fallback' },
 ];
 
@@ -32,6 +62,11 @@ export default function App() {
   const [host, setHost] = useState(q.get('host') || '');
   const [video, setVideo] = useState(q.get('video') || '');
   const [lang, setLang] = useState(q.get('lang') ?? 'es');
+  const [customLang, setCustomLang] = useState('');
+  const [aliasText, setAliasText] = useState(
+    q.get('alias') || readStoredAliases(q.get('video') || ''),
+  );
+  const [aliasVideo, setAliasVideo] = useState(q.get('video') || '');
   const [fallback, setFallback] = useState('en');
   const [token, setToken] = useState('');
   const [expires, setExpires] = useState('');
@@ -55,6 +90,38 @@ export default function App() {
     [fallback],
   );
 
+  // A typed code always wins, so any tag Bunny publishes can be targeted —
+  // including ones missing from the dropdown, and "#1" to force a position.
+  const effectiveLang = customLang.trim() || lang;
+
+  const trackAliases = useMemo(() => {
+    const map = parseAliases(aliasText);
+    return Object.keys(map).length ? map : null;
+  }, [aliasText]);
+
+  // Remember the map against the video it describes, so a language only has to
+  // be identified by ear once.
+  useEffect(() => {
+    if (aliasVideo) writeStoredAliases(aliasVideo, aliasText);
+  }, [aliasVideo, aliasText]);
+
+  /** Point the currently selected language at one track — the assign buttons. */
+  const assignAlias = useCallback((index) => {
+    const code = effectiveLang.trim();
+    if (!code || code.startsWith('#') || !diag) return;
+    const target = aliasTargetFor(diag.tracks, index);
+    if (!target) return;
+    setAliasText((prev) => formatAliases({ ...parseAliases(prev), [code]: target }));
+  }, [effectiveLang, diag]);
+
+  const assignable = Boolean(effectiveLang.trim()) && !effectiveLang.trim().startsWith('#');
+
+  /** Tracks that no language code can select — the ones that need assigning. */
+  const unreachable = useMemo(
+    () => (diag ? unreachableByLanguage(diag.tracks) : []),
+    [diag],
+  );
+
   const src = useMemo(
     () => (host && video ? buildHlsUrl(host, video, signedParams) : ''),
     [host, video, signedParams],
@@ -62,10 +129,15 @@ export default function App() {
 
   const load = useCallback((e) => {
     e.preventDefault();
+    // Loading a different video swaps in whatever was identified for that one.
+    if (video !== aliasVideo) {
+      setAliasText(readStoredAliases(video));
+      setAliasVideo(video);
+    }
     setDiag(null);
     setLoaded(true);
     setNonce((n) => n + 1);
-  }, []);
+  }, [video, aliasVideo]);
 
   /** Fetch the manifest and show the audio renditions Bunny actually published. */
   const inspect = useCallback(async () => {
@@ -121,7 +193,11 @@ export default function App() {
 
         <label>
           <span>User&apos;s preferred language</span>
-          <select value={lang} onChange={(e) => setLang(e.target.value)}>
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value)}
+            disabled={Boolean(customLang.trim())}
+          >
             {LANG_CHOICES.map((c) => (
               <option key={c.code || 'none'} value={c.code}>{c.label}</option>
             ))}
@@ -130,9 +206,40 @@ export default function App() {
         </label>
 
         <label>
+          <span>…or any tag from the manifest</span>
+          <input
+            value={customLang}
+            onChange={(e) => setCustomLang(e.target.value)}
+            placeholder="yue, zh-HK, pt-BR, #1"
+          />
+          <small>
+            Overrides the dropdown. Matches the manifest&apos;s LANGUAGE, then its NAME;
+            <code>#1</code> forces the track at that position when Bunny published no
+            language metadata at all.
+          </small>
+        </label>
+
+        <label>
           <span>Fallback chain</span>
           <input value={fallback} onChange={(e) => setFallback(e.target.value)} placeholder="en" />
           <small>Comma-separated, tried in order.</small>
+        </label>
+
+        <label className="span2">
+          <span>Track aliases — repair tracks Bunny mis-tagged</span>
+          <input
+            value={aliasText}
+            onChange={(e) => setAliasText(e.target.value)}
+            placeholder="yue=Audio, pt=Portuguese, pt-BR=Portuguese 28"
+          />
+          <small>
+            <code>code=NAME</code> pairs, comma-separated. Points a language code at a
+            track&apos;s manifest NAME (or <code>#40</code>) when Bunny wrote the wrong
+            LANGUAGE — check the NAME column below for what to point at. Aliased tracks
+            are renamed in the player&apos;s own Audio menu too, so it lists real language
+            names. Alias <em>both</em> tracks when two share a tag, or the unaliased one
+            still wins on the raw tag.
+          </small>
         </label>
 
         <details className="span2">
@@ -175,7 +282,8 @@ export default function App() {
             key={nonce}
             cdnHostname={host}
             videoId={video}
-            preferredAudioLang={lang}
+            preferredAudioLang={effectiveLang}
+            trackAliases={trackAliases}
             fallbackLangs={fallbackLangs}
             signedParams={signedParams}
             onDiagnostics={setDiag}
@@ -191,9 +299,23 @@ export default function App() {
             Engine <strong>{diag.engine}</strong> · selected index{' '}
             <strong>{diag.chosen}</strong> · <em>{diag.reason}</em>
           </p>
+          {unreachable.length > 0 && (
+            <p className="warn">
+              {unreachable.length} track{unreachable.length === 1 ? '' : 's'} cannot be
+              reached by <em>any</em> language code — each shares its tag with an earlier
+              track, so the earlier one always wins:{' '}
+              {unreachable.map((u) => `#${u.index} ${u.lang || '?'}/${u.name || '?'}`).join(', ')}.
+              Bunny overwrote what language they hold, so play each one, pick the right
+              language above, and press <strong>assign</strong> on its row. That is stored
+              against this video — you only do it once.
+            </p>
+          )}
           <table>
             <thead>
-              <tr><th>#</th><th>LANGUAGE</th><th>NAME</th><th>DEFAULT</th><th>selected</th></tr>
+              <tr>
+                <th>#</th><th>LANGUAGE</th><th>NAME</th><th>menu label</th>
+                <th>DEFAULT</th><th>selected</th><th>assign</th>
+              </tr>
             </thead>
             <tbody>
               {diag.tracks.map((t, i) => (
@@ -201,8 +323,21 @@ export default function App() {
                   <td>{i}</td>
                   <td>{t.lang || <em>none</em>}</td>
                   <td>{t.name || <em>none</em>}</td>
+                  <td>{t.label}</td>
                   <td>{t.default ? 'yes' : ''}</td>
                   <td>{i === diag.chosen ? '←' : ''}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => assignAlias(i)}
+                      disabled={!assignable}
+                      title={assignable
+                        ? `This track is ${effectiveLang}`
+                        : 'Pick a language above first'}
+                    >
+                      = {assignable ? effectiveLang : '…'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

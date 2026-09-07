@@ -96,6 +96,14 @@ table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 tr.hit { background: var(--hit); font-weight: 600; }
 
+/* The per-row "assign this language to this track" control. */
+td button {
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 pre {
   overflow-x: auto;
   background: var(--bg);

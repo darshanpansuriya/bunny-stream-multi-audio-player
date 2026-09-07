@@ -1,0 +1,217 @@
+[
+  {
+    "lang": "en",
+    "name": "English",
+    "default": true
+  },
+  {
+    "lang": "ar",
+    "name": "Arabic",
+    "default": false
+  },
+  {
+    "lang": "bg",
+    "name": "Bulgarian",
+    "default": false
+  },
+  {
+    "lang": "bn",
+    "name": "Bengali",
+    "default": false
+  },
+  {
+    "lang": "bs",
+    "name": "Bosnian",
+    "default": false
+  },
+  {
+    "lang": "cs",
+    "name": "Czech",
+    "default": false
+  },
+  {
+    "lang": "da",
+    "name": "Danish",
+    "default": false
+  },
+  {
+    "lang": "de",
+    "name": "German",
+    "default": false
+  },
+  {
+    "lang": "el",
+    "name": "Greek Modern (1453-)",
+    "default": false
+  },
+  {
+    "lang": "es",
+    "name": "Spanish",
+    "default": false
+  },
+  {
+    "lang": "et",
+    "name": "Estonian",
+    "default": false
+  },
+  {
+    "lang": "fi",
+    "name": "Finnish",
+    "default": false
+  },
+  {
+    "lang": "fil",
+    "name": "Filipino",
+    "default": false
+  },
+  {
+    "lang": "fr",
+    "name": "French",
+    "default": false
+  },
+  {
+    "lang": "he",
+    "name": "Hebrew",
+    "default": false
+  },
+  {
+    "lang": "hi",
+    "name": "Hindi",
+    "default": false
+  },
+  {
+    "lang": "hr",
+    "name": "Croatian",
+    "default": false
+  },
+  {
+    "lang": "hu",
+    "name": "Hungarian",
+    "default": false
+  },
+  {
+    "lang": "id",
+    "name": "Indonesian",
+    "default": false
+  },
+  {
+    "lang": "it",
+    "name": "Italian",
+    "default": false
+  },
+  {
+    "lang": "ja",
+    "name": "Japanese",
+    "default": false
+  },
+  {
+    "lang": "ko",
+    "name": "Korean",
+    "default": false
+  },
+  {
+    "lang": "lt",
+    "name": "Lithuanian",
+    "default": false
+  },
+  {
+    "lang": "lv",
+    "name": "Latvian",
+    "default": false
+  },
+  {
+    "lang": "ms",
+    "name": "Malay",
+    "default": false
+  },
+  {
+    "lang": "nl",
+    "name": "Dutch",
+    "default": false
+  },
+  {
+    "lang": "no",
+    "name": "Norwegian",
+    "default": false
+  },
+  {
+    "lang": "pl",
+    "name": "Polish",
+    "default": false
+  },
+  {
+    "lang": "pt",
+    "name": "Portuguese 28",
+    "default": false
+  },
+  {
+    "lang": "pt",
+    "name": "Portuguese",
+    "default": false
+  },
+  {
+    "lang": "ro",
+    "name": "Romanian",
+    "default": false
+  },
+  {
+    "lang": "ru",
+    "name": "Russian",
+    "default": false
+  },
+  {
+    "lang": "sk",
+    "name": "Slovak",
+    "default": false
+  },
+  {
+    "lang": "sl",
+    "name": "Slovenian",
+    "default": false
+  },
+  {
+    "lang": "sr",
+    "name": "Serbian",
+    "default": false
+  },
+  {
+    "lang": "sv",
+    "name": "Swedish",
+    "default": false
+  },
+  {
+    "lang": "th",
+    "name": "Thai",
+    "default": false
+  },
+  {
+    "lang": "tr",
+    "name": "Turkish",
+    "default": false
+  },
+  {
+    "lang": "uk",
+    "name": "Ukrainian",
+    "default": false
+  },
+  {
+    "lang": "vi",
+    "name": "Vietnamese",
+    "default": false
+  },
+  {
+    "lang": "en",
+    "name": "Audio",
+    "default": false
+  },
+  {
+    "lang": "zh",
+    "name": "Chinese",
+    "default": false
+  },
+  {
+    "lang": "zu",
+    "name": "Zulu",
+    "default": false
+  }
+]

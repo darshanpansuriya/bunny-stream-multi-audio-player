@@ -94,8 +94,9 @@ import BunnyMultiAudioPlayer from './BunnyMultiAudioPlayer.jsx';
 |---|---|
 | `cdnHostname` | Pull-zone host, with or without `https://` |
 | `videoId` | Bunny video GUID |
-| `preferredAudioLang` | The user's preference. Changing it re-selects **live**, without reloading the video. |
+| `preferredAudioLang` | The user's preference. Changing it re-selects **live**, without reloading the video. Also accepts a track `NAME`, or `"#3"` to force a position. |
 | `fallbackLangs` | Ordered fallbacks, default `['en']` |
+| `trackAliases` | `{ yue: 'Audio' }` — points a language code at a track's `NAME`, `LANGUAGE` or `"#40"`, for tracks Bunny mis-tagged. See below. |
 | `signedParams` | `{ token, expires, token_path }` when CDN token auth is on — sign server-side |
 | `onAudioTrackChange` | `(track, index)` — fires on the initial selection and on every switch |
 | `onDiagnostics` | `({ engine, src, tracks, chosen, reason })` — what the harness renders |
@@ -103,16 +104,150 @@ import BunnyMultiAudioPlayer from './BunnyMultiAudioPlayer.jsx';
 
 ### How a track gets chosen
 
+0. An explicit position — pass `"#1"` (or the number `1`) to force track 1 outright.
 1. Exact tag match, region included — `pt-BR` beats plain `pt`.
-2. Base-language match on the manifest's `LANGUAGE` attribute (`es-419`, `spa`, `es` all → `es`).
-3. Base-language match on the track *name*, for tracks with no `LANGUAGE`.
-4. Each entry in `fallbackLangs`, in order.
-5. The track flagged `DEFAULT=YES`.
-6. Track 0.
+2. Exact *name* match, for tracks Bunny published with no `LANGUAGE` at all.
+3. Region disambiguation from the track name, when several tracks share one base
+   language — see *Regions* below.
+4. Base-language match on the manifest's `LANGUAGE` attribute (`es-419`, `spa`, `es` all → `es`).
+5. Base-language match on the track *name*, for tracks with no `LANGUAGE`.
+6. Each entry in `fallbackLangs`, in order.
+7. The track flagged `DEFAULT=YES`.
+8. Track 0.
 
-Steps 5–6 mean the video never plays silent, whatever the preference. Every decision
+Steps 7–8 mean the video never plays silent, whatever the preference. Every decision
 comes back through `onDiagnostics` with a human-readable `reason` — worth logging in
 staging so you can see which rule fired for real users.
+
+#### When Bunny writes the *wrong* tag — `trackAliases`
+
+Worse than a missing label: Bunny's encoder rejects language codes it does not know and
+substitutes one it does. A real 43-track library came back like this:
+
+```
+#EXT-X-MEDIA:TYPE=AUDIO,URI="audio_1/audio.m3u8",...,LANGUAGE="en",NAME="English",DEFAULT=YES
+#EXT-X-MEDIA:TYPE=AUDIO,URI="audio_41/audio.m3u8",...,LANGUAGE="en",NAME="Audio"    ← Cantonese
+```
+
+The Cantonese dub is tagged **`en`**. No language code can reach it, because as far as the
+manifest is concerned it *is* English — `preferredAudioLang="yue"` correctly finds nothing
+and falls back. Only the `NAME` is unique, so point at that:
+
+```jsx
+<BunnyMultiAudioPlayer
+  preferredAudioLang="yue"                 // your app keeps clean language codes
+  trackAliases={{ yue: 'Audio' }}          // …and this repairs the one bad track
+/>
+```
+
+An alias maps a language code to a track's `NAME`, its `LANGUAGE`, or a position
+(`'#40'`). It is checked before every other rule — it exists precisely for videos whose
+tags cannot be trusted — and if the target is not in the manifest it falls through to the
+normal chain rather than failing. `preferredAudioLang="Audio"` or `"#40"` also work
+directly, without an alias map.
+
+**An alias also names the menu entry.** The player's own audio dropdown is built from the
+manifest, so without help it repeats Bunny's mistake. With the alias above, that row reads
+**"Cantonese"** — the dropdown lists real language names and picking one Just Works, no
+per-user configuration:
+
+| track | manifest says | menu shows |
+|---|---|---|
+| `audio_41` | `LANGUAGE="en" NAME="Audio"` | **Cantonese** |
+| `audio_29` | `LANGUAGE="pt" NAME="Portuguese 28"` | **Brazilian Portuguese** |
+| `audio_30` | `LANGUAGE="pt" NAME="Portuguese"` | **Portuguese** |
+
+Key matching is deliberately strict about regions. An unregioned key covers related
+spellings — `yue` answers `zh-HK` and `Cantonese` — but a key that *names* a region never
+answers the bare language: `{ 'pt-BR': … }` must not capture a plain `pt` request, or both
+collapse back onto one track. So when two tracks share a tag, **alias both**:
+
+```jsx
+trackAliases={{ yue: 'Audio', pt: 'Portuguese', 'pt-BR': 'Portuguese 28' }}
+```
+
+Alias only one and the other language still matches the raw tag first — which, with two
+tracks both tagged `pt`, is the same track you just aliased.
+
+The durable fix is on Bunny's side — re-upload that audio track under a language Bunny
+accepts, or rename it to something meaningful — but the alias unblocks you without a
+re-encode.
+
+##### The picker itself
+
+[`src/languages.js`](src/languages.js) holds the 43 languages this library publishes —
+one per audio track — and drives the harness dropdown. The test suite resolves every one
+of them against the captured manifest and asserts that they land on **43 distinct tracks,
+with none falling back**, so a language going missing or two of them colliding fails the
+build rather than reaching a user. Only `yue` and `pt-br` need alias entries; the other 41
+resolve on their own tags.
+
+##### Building the map without typing it
+
+`unreachableByLanguage(tracks)` reports exactly which tracks no language code can select —
+the ones needing an alias — and `aliasTargetFor(tracks, index)` produces the target string
+for one. On the real manifest:
+
+```
+#29  pt/Portuguese   shadowed by #28   target: "Portuguese"
+#40  en/Audio        shadowed by #0    target: "Audio"
+```
+
+Both are *shadowed*: selection tries the exact tag first, so within a group sharing one
+language only the first is ever reachable. That part is fully automatic. What is **not**
+derivable is which language each shadowed track actually holds — Bunny overwrote it, and
+nothing in the manifest brings it back. (The tracks are ordered by the code Bunny intended,
+so the mis-tagged one sits between `vi` and `zh`; but `wo`, `xh`, `yi` and `yo` sort there
+too. A guess would be a coin flip.)
+
+So it is stated once, by ear. The harness turns that into two clicks: pick the language,
+press **assign** on the track's row, and the alias is written for you and stored in
+`localStorage` against that video GUID — reload, and it is still there. In your own app,
+keep the finished map wherever the video's metadata lives:
+
+```jsx
+<BunnyMultiAudioPlayer
+  trackAliases={video.audioAliases}   // { yue: 'Audio', pt: 'Portuguese', 'pt-BR': 'Portuguese 28' }
+/>
+```
+
+#### Cantonese, and other languages Bunny cannot name
+
+Bunny's dashboard and its own player only have display names for a short list of
+languages. A track tagged `yue` (Cantonese) is shown there as the bare word **"Audio"** —
+the tag is not lost, Bunny just has no label for it. Pass `preferredAudioLang="yue"`
+(or `zh-HK`, or `Cantonese`) and the track is found on its manifest tag; the menu here
+labels it "Cantonese" rather than repeating Bunny's placeholder.
+
+Cantonese is deliberately *not* folded into `zh`. It is a separate language under the
+`zh` macrolanguage, so `yue` → `zh` would silently play Mandarin on a video that carries
+both. Same for `nan`, `hak`, `wuu`, `gan`, `hsn`. `cmn` and `zh-CN` do mean Mandarin, and
+`zh-HK` / `zh-MO` are treated as Cantonese, which is what they mean for *audio*.
+
+#### Regions: `pt` vs `pt-BR`
+
+Bunny frequently drops the region subtag and publishes every Portuguese dub as
+`LANGUAGE="pt"`, leaving the region in the track name only — so `pt` and `pt-BR` used to
+resolve to the same track. When more than one track shares a base language, the region is
+now matched against the label (`br` also matches "Brazil", "Brasil", "Brazilian";
+`419` matches "Latin America", "LATAM"; and so on), and a request with a region no label
+mentions stays on the *unregioned* track instead of grabbing an arbitrary sibling.
+
+If Bunny published neither a region tag nor a usable name, no rule can tell the tracks
+apart — the diagnostics panel says so, and `"#1"` selects by position.
+
+This is worth checking before assuming a bug. The same real manifest above carries two
+Portuguese tracks:
+
+```
+LANGUAGE="pt",NAME="Portuguese 28"
+LANGUAGE="pt",NAME="Portuguese"
+```
+
+Neither says Brazil, so `pt` and `pt-BR` *correctly* resolve to the same track — there is
+no Brazilian dub in the manifest to find, only two tracks someone uploaded as plain
+Portuguese. Select them by name (`"Portuguese"` vs `"Portuguese 28"`) or fix the labels
+in Bunny.
 
 ---
 

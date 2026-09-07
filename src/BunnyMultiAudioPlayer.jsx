@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { buildHlsUrl, labelForTrack, pickAudioTrack } from './audioLang.js';
+import { buildHlsUrl, labelTracks, pickAudioTrack } from './audioLang.js';
 import './BunnyMultiAudioPlayer.css';
 
 export default function BunnyMultiAudioPlayer({
@@ -21,6 +21,7 @@ export default function BunnyMultiAudioPlayer({
   videoId,                     // Bunny video GUID
   preferredAudioLang,          // "es" | "es-419" | "spa" | "Spanish"
   fallbackLangs = ['en'],
+  trackAliases = null,          // { yue: 'Audio' } — repair Bunny's wrong tags
   signedParams = null,         // { token, expires, token_path } — signed SERVER-SIDE
   poster,
   autoPlay = false,
@@ -51,6 +52,8 @@ export default function BunnyMultiAudioPlayer({
   prefRef.current = preferredAudioLang;
   const fbRef = useRef(fallbackLangs);
   fbRef.current = fallbackLangs;
+  const aliasRef = useRef(trackAliases);
+  aliasRef.current = trackAliases;
 
   const diagRef = useRef(onDiagnostics);
   diagRef.current = onDiagnostics;
@@ -87,11 +90,12 @@ export default function BunnyMultiAudioPlayer({
 
       const syncTrackList = () => {
         const list = hls.audioTracks || [];
+        const labels = labelTracks(list, undefined, aliasRef.current);
         const shaped = list.map((t, i) => ({
           lang: t.lang || '',
           name: t.name || '',
           default: t.default === true,
-          label: labelForTrack({ lang: t.lang, name: t.name }, i),
+          label: labels[i],
         }));
         setTracks(shaped);
         return shaped;
@@ -101,7 +105,9 @@ export default function BunnyMultiAudioPlayer({
         const list = hls.audioTracks || [];
         if (list.length === 0) return;
         const shaped = syncTrackList();
-        const { index, reason: why } = pickAudioTrack(list, prefRef.current, fbRef.current);
+        const { index, reason: why } = pickAudioTrack(
+          list, prefRef.current, fbRef.current, aliasRef.current,
+        );
         setReason(why);
         if (index !== -1 && hls.audioTrack !== index) {
           // Setting it here — before the first audio segment is appended —
@@ -156,10 +162,13 @@ export default function BunnyMultiAudioPlayer({
         const at = video.audioTracks; // AudioTrackList — Safari only
         if (!at || at.length === 0) return;
         const list = Array.from(at).map((t) => ({ lang: t.language || '', name: t.label || '' }));
-        const shaped = list.map((t, i) => ({ ...t, default: false, label: labelForTrack(t, i) }));
+        const labels = labelTracks(list, undefined, aliasRef.current);
+        const shaped = list.map((t, i) => ({ ...t, default: false, label: labels[i] }));
         setTracks(shaped);
 
-        const { index, reason: why } = pickAudioTrack(list, prefRef.current, fbRef.current);
+        const { index, reason: why } = pickAudioTrack(
+          list, prefRef.current, fbRef.current, aliasRef.current,
+        );
         setReason(why);
         if (index !== -1) {
           for (let i = 0; i < at.length; i += 1) at[i].enabled = i === index;
@@ -202,7 +211,9 @@ export default function BunnyMultiAudioPlayer({
     const video = videoRef.current;
 
     if (hls && hls.audioTracks && hls.audioTracks.length) {
-      const { index, reason: why } = pickAudioTrack(hls.audioTracks, preferredAudioLang, fallbackLangs);
+      const { index, reason: why } = pickAudioTrack(
+        hls.audioTracks, preferredAudioLang, fallbackLangs, aliasRef.current,
+      );
       setReason(why);
       if (index !== -1 && index !== hls.audioTrack) hls.audioTrack = index;
       return;
@@ -210,15 +221,44 @@ export default function BunnyMultiAudioPlayer({
     const at = video && video.audioTracks;
     if (at && at.length) {
       const list = Array.from(at).map((t) => ({ lang: t.language || '', name: t.label || '' }));
-      const { index, reason: why } = pickAudioTrack(list, preferredAudioLang, fallbackLangs);
+      const { index, reason: why } = pickAudioTrack(
+        list, preferredAudioLang, fallbackLangs, aliasRef.current,
+      );
       setReason(why);
       if (index !== -1) {
         for (let i = 0; i < at.length; i += 1) at[i].enabled = i === index;
         setActiveIndex(index);
       }
     }
+    // Aliases are in here too: editing the map has to re-select, exactly like
+    // editing the language does. Callers passing an inline object literal make
+    // this run every render, which is harmless — it only writes hls.audioTrack
+    // when the index actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preferredAudioLang]);
+  }, [preferredAudioLang, trackAliases]);
+
+  /* ------------------------------------------------------------------ */
+  /* Re-label when the alias map changes                                 */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    const hls = hlsRef.current;
+    const video = videoRef.current;
+
+    let raw = hls && hls.audioTracks;
+    if ((!raw || !raw.length) && video && video.audioTracks) {
+      raw = Array.from(video.audioTracks).map((t) => ({ lang: t.language || '', name: t.label || '' }));
+    }
+    if (!raw || !raw.length) return;
+
+    const labels = labelTracks(raw, undefined, trackAliases);
+    setTracks((prev) => {
+      // Returning the same array means React skips the render, which keeps this
+      // safe for callers passing a fresh object literal on every render.
+      if (prev.length !== labels.length) return prev;
+      if (prev.every((t, i) => t.label === labels[i])) return prev;
+      return prev.map((t, i) => ({ ...t, label: labels[i] }));
+    });
+  }, [trackAliases]);
 
   /* ------------------------------------------------------------------ */
   /* Manual switching                                                    */
